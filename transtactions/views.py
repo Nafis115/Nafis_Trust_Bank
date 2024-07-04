@@ -129,7 +129,7 @@ class LoanRequestView(TransactionCreateMixin):
 class TransactionReportView(LoginRequiredMixin, ListView):
     template_name = 'transactions/transactions_report.html'
     model = Transaction
-    balance = 0 # filter korar pore ba age amar total balance ke show korbe
+    balance = 0 
     
     def get_queryset(self):
         queryset = super().get_queryset().filter(
@@ -163,24 +163,35 @@ class TransactionReportView(LoginRequiredMixin, ListView):
 class PayLoanView(LoginRequiredMixin, View):
     def get(self, request, loan_id):
         loan = get_object_or_404(Transaction, id=loan_id)
+        
         if loan.loan_approve:
             user_account = loan.account
-                # Reduce the loan amount from the user's balance
-                # 5000, 500 + 5000 = 5500
-                # balance = 3000, loan = 5000
-            if loan.amount < user_account.balance:
+            
+            if loan.amount <= user_account.balance:
                 user_account.balance -= loan.amount
                 loan.balance_after_transaction = user_account.balance
                 user_account.save()
                 loan.loan_approved = True
-                loan.transaction_type = LOAN_PAID
+                loan.transaction_type = Transaction.LOAN_PAID
                 loan.save()
                 
+                # Send loan payment confirmation email
+                send_transaction_email(
+                    request.user,
+                    loan.amount,
+                    "Loan Payment Confirmation",
+                    "transactions/loan_pay_email.html"
+                )
+                
+                messages.success(
+                    request,
+                    f'Loan payment of ${loan.amount} processed successfully.'
+                )
             else:
                 messages.error(
-            self.request,
-            f'Loan amount is greater than available balance'
-        )
+                    request,
+                    f'Loan amount ${loan.amount} exceeds available balance.'
+                )
 
         return redirect('loan_list')
 
@@ -188,7 +199,7 @@ class PayLoanView(LoginRequiredMixin, View):
 class LoanListView(LoginRequiredMixin,ListView):
     model = Transaction
     template_name = 'transactions/loan_request.html'
-    context_object_name = 'loans' # loan list ta ei loans context er moddhe thakbe
+    context_object_name = 'loans' 
     
     def get_queryset(self):
         user_account = self.request.user.account
